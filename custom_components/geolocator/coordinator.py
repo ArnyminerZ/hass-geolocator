@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
@@ -27,12 +28,19 @@ class GeoLocatorUpdateCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
+        config_entry: ConfigEntry,
         api,
         provider: str,
         max_requests_per_second: float,
         max_requests_per_day: int,
     ) -> None:
-        super().__init__(hass, _LOGGER, name=DOMAIN, update_interval=None)
+        super().__init__(
+            hass,
+            _LOGGER,
+            config_entry=config_entry,
+            name=DOMAIN,
+            update_interval=None,
+        )
         self.api = api
         self.provider = provider
         self._max_requests_per_second = max_requests_per_second

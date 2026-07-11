@@ -80,6 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = GeoLocatorUpdateCoordinator(
         hass,
+        config_entry=entry,
         api=api,
         provider=provider,
         max_requests_per_second=max_requests_per_second,
