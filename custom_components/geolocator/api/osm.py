@@ -1,7 +1,5 @@
 import logging
 
-import aiohttp
-
 from .base import GeoLocatorAPI
 from ..const import DEFAULT_OSM_USER_AGENT, OSM_ATTRIBUTION
 
@@ -22,7 +20,8 @@ class OSMAPI(GeoLocatorAPI):
     ``extract_attribution`` for display alongside the data.
     """
 
-    def __init__(self, user_agent: str | None = None):
+    def __init__(self, session, user_agent: str | None = None):
+        super().__init__(session)
         self.user_agent = user_agent or DEFAULT_OSM_USER_AGENT
 
     async def reverse_geocode(self, latitude, longitude, language="en"):
@@ -37,11 +36,9 @@ class OSMAPI(GeoLocatorAPI):
             "accept-language": language,
         }
 
-        async with aiohttp.ClientSession(headers=headers) as session:
-            async with session.get(NOMINATIM_URL, params=params) as resp:
-                data = await resp.json()
-                _LOGGER.debug("Nominatim reverse geocode response: %s", data)
-                return data
+        data = await self._get_json(NOMINATIM_URL, params, headers=headers)
+        _LOGGER.debug("Nominatim reverse geocode response: %s", data)
+        return data
 
     async def get_timezone(self, latitude, longitude, language="en"):
         # Nominatim does not provide timezone info; the coordinator falls
@@ -54,14 +51,19 @@ class OSMAPI(GeoLocatorAPI):
     def extract_neighborhood(self, data):
         return data.get("address", {}).get("neighbourhood")
 
-    def extract_city(self, data):
+    def extract_locality(self, data):
         address = data.get("address", {})
         return (
             address.get("city")
             or address.get("town")
             or address.get("village")
+            or address.get("hamlet")
+            or address.get("municipality")
             or address.get("county")
         )
+
+    def extract_county(self, data):
+        return data.get("address", {}).get("county")
 
     def extract_state_long(self, data):
         return data.get("address", {}).get("state")

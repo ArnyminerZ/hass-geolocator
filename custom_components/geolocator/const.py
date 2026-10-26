@@ -28,6 +28,7 @@ LOCATION_SENSOR = "current_location"
 API_PROVIDER_META = {
     "google": {"name": "Google Maps", "needs_key": True},
     "opencage": {"name": "OpenCage", "needs_key": True},
+    "locationiq": {"name": "LocationIQ", "needs_key": True},
     "geonames": {"name": "GeoNames", "needs_key": True},
     "bigdatacloud": {"name": "BigDataCloud", "needs_key": False},
     "osm": {"name": "OpenStreetMap (Nominatim)", "needs_key": False, "needs_user_agent": True},
