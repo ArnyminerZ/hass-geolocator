@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.const import DEGREE
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -12,7 +13,8 @@ from .const import DOMAIN
 
 SENSOR_KEYS = {
     "current_address": "Current Address",
-    "city": "City",
+    "city": "Locality",  # key kept as "city" so existing unique_ids/entity IDs don't change
+    "county": "County",
     "state": "State",
     "country": "Country",
     "timezone_id": "Timezone ID",
@@ -20,11 +22,13 @@ SENSOR_KEYS = {
     "timezone_abbreviation": "Timezone Abbreviation",
     "timezone_source": "Data Source",
     "plus_code": "Plus Code",
+    "magnetic_declination": "Magnetic Declination",
 }
 
 SENSOR_ICONS = {
     "current_address": "mdi:map-marker",
-    "city": "mdi:city",
+    "city": "mdi:map-marker-radius",
+    "county": "mdi:map-outline",
     "state": "mdi:flag-variant",
     "country": "mdi:earth",
     "timezone_id": "mdi:calendar-clock",
@@ -32,6 +36,7 @@ SENSOR_ICONS = {
     "timezone_abbreviation": "mdi:map-clock",
     "timezone_source": "mdi:cloud-download",
     "plus_code": "mdi:crosshairs-gps",
+    "magnetic_declination": "mdi:compass-outline",
 }
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
@@ -41,7 +46,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     provider = entry.options.get("api_provider") or entry.data.get("api_provider", "google")
 
     for key, name in SENSOR_KEYS.items():
-        if provider == "offline" and key not in ("timezone_id", "timezone_abbreviation", "timezone_source"):
+        if provider == "offline" and key not in ("timezone_id", "timezone_full", "timezone_abbreviation", "timezone_source", "plus_code", "magnetic_declination"):
             continue
         if key == "timezone_source":
             sensors.append(TimezoneSourceSensor(coordinator=coordinator, entry=entry))
@@ -61,8 +66,14 @@ class GeoLocatorSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_icon = SENSOR_ICONS.get(key, "mdi:map-marker-question")
 
+        if key == "magnetic_declination":
+            # Degrees east of true north (negative = west)
+            self._attr_native_unit_of_measurement = DEGREE
+            self._attr_state_class = SensorStateClass.MEASUREMENT
+            self._attr_suggested_display_precision = 1
+
     @property
-    def state(self):
+    def native_value(self):
         data = self.coordinator.data or {}
         if self._key in ("timezone_id", "timezone_abbreviation"):
             tz_id = data.get("timezone_id")

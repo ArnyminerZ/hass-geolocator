@@ -8,12 +8,13 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from openlocationcode import openlocationcode as olc
+from pygeomag import GeoMag, calculate_decimal_year
 
 from .const import API_PROVIDER_META, DOMAIN, OSM_MIN_REQUEST_INTERVAL, SERVICE_SET_TIMEZONE
 
 _LOGGER = logging.getLogger(__name__)
 
-ADDRESS_KEYS = ("current_address", "city", "state", "country", "attribution")
+ADDRESS_KEYS = ("current_address", "city", "county", "state", "country", "attribution")
 
 
 class GeoLocatorUpdateCoordinator(DataUpdateCoordinator):
@@ -98,16 +99,32 @@ class GeoLocatorUpdateCoordinator(DataUpdateCoordinator):
 
                     user_language = hass.config.language or "en"
                     geocode_raw = await self.api.reverse_geocode(lat, lon, user_language)
-                    timezone_id = await self.api.get_timezone(lat, lon, user_language)
 
                     address_data = {
                         "current_address": self.api.format_full_address(geocode_raw),
-                        "city": self.api.extract_city(geocode_raw),
+                        # Key stays "city" so existing entity IDs are preserved
+                        "city": self.api.extract_locality(geocode_raw),
+                        "county": self.api.extract_county(geocode_raw),
                         "state": self.api.extract_state_long(geocode_raw),
                         "country": self.api.extract_country(geocode_raw),
                         "attribution": self.api.extract_attribution(geocode_raw),
                     }
                     source = API_PROVIDER_META[self.provider]["name"]
+
+                    # Separate from the address lookup so a timezone failure keeps the
+                    # address sensors populated. Some providers include the timezone in
+                    # the geocode response, so only make a separate request if it's missing
+                    try:
+                        timezone_id = self.api.extract_timezone(geocode_raw) or await self.api.get_timezone(
+                            lat, lon, user_language
+                        )
+                    except Exception as err:  # noqa: BLE001
+                        _LOGGER.warning(
+                            "GeoLocator: %s timezone lookup failed, using local timezone: %s",
+                            source,
+                            err,
+                        )
+                        timezone_id = None
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("GeoLocator: Failed to update location: %s", err)
 
@@ -123,8 +140,10 @@ class GeoLocatorUpdateCoordinator(DataUpdateCoordinator):
             timezone_id, hass.config.language or "en-US"
         )
 
-        # Call the timezone-setting service with the computed timezone_id
-        if timezone_id:
+        declination = await self._async_magnetic_declination(lat, lon)
+
+        # Only write the HA core config when the timezone actually changed
+        if timezone_id and timezone_id != hass.config.time_zone:
             try:
                 await hass.services.async_call(
                     DOMAIN,
@@ -141,7 +160,27 @@ class GeoLocatorUpdateCoordinator(DataUpdateCoordinator):
             "timezone_id": timezone_id,
             "timezone_source": source,
             "timezone_full": full_name,
+            "magnetic_declination": declination,
         }
+
+    async def _async_magnetic_declination(self, lat: float, lon: float) -> float | None:
+        """Magnetic declination from the World Magnetic Model (computed locally, works offline)."""
+
+        def _calculate_declination():
+            geo_mag = GeoMag()  # bundled WMM coefficients (WMM2025, valid 2025.0-2030.0)
+            result = geo_mag.calculate(
+                glat=lat,
+                glon=lon,
+                alt=(self.hass.config.elevation or 0) / 1000,  # metres -> km
+                time=calculate_decimal_year(datetime.now()),
+            )
+            return round(result.d, 2)
+
+        try:
+            return await self.hass.async_add_executor_job(_calculate_declination)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("GeoLocator: Failed to calculate magnetic declination: %s", err)
+            return None
 
     async def _async_local_timezone(self, lat: float, lon: float) -> str | None:
         def _find_timezone():

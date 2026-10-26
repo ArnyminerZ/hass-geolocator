@@ -4,6 +4,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service import async_register_admin_service
 
 from .const import (
@@ -19,6 +20,7 @@ from .const import (
 )
 from .api.google import GoogleMapsAPI
 from .api.opencage import OpenCageAPI
+from .api.locationiq import LocationIQAPI
 from .api.geonames import GeoNamesAPI
 from .api.bigdatacloud import BigDataCloudAPI
 from .api.osm import OSMAPI
@@ -63,16 +65,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     else:
         _LOGGER.info("GeoLocator: Using API provider: %s", provider)
 
+    session = async_get_clientsession(hass)
     if provider == "google":
-        api = GoogleMapsAPI(api_key)
+        api = GoogleMapsAPI(session, api_key)
     elif provider == "opencage":
-        api = OpenCageAPI(api_key)
+        api = OpenCageAPI(session, api_key)
+    elif provider == "locationiq":
+        api = LocationIQAPI(session, api_key)
     elif provider == "geonames":
-        api = GeoNamesAPI(api_key)
+        api = GeoNamesAPI(session, api_key)
     elif provider == "bigdatacloud":
-        api = BigDataCloudAPI()
+        api = BigDataCloudAPI(session)
     elif provider == "osm":
-        api = OSMAPI(user_agent=user_agent)
+        api = OSMAPI(session, user_agent=user_agent)
     elif provider == "offline":
         api = None
     else:
@@ -112,5 +117,5 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return unload_ok
 
 async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await async_unload_entry(hass, entry)
-    await async_setup_entry(hass, entry)
+    # Let HA run the unload callbacks; calling unload/setup directly added another update listener on every reload
+    await hass.config_entries.async_reload(entry.entry_id)
